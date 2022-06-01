@@ -27,11 +27,13 @@
 
 #include "USB.h"
 #include "USBHIDKeyboard.h"
-USBHIDKeyboard Keyboard;
+
 
 #include <WiFi.h>
 #include <WiFiMulti.h>
-WiFiMulti wifiMulti;
+
+#include "FS.h"
+#include "SPIFFS.h"
 
 #define OSX 0
 #define WINDOWS 1
@@ -39,6 +41,12 @@ WiFiMulti wifiMulti;
 
 //how many clients should be able to telnet to this ESP32
 #define MAX_SRV_CLIENTS 1
+
+#define FORMAT_SPIFFS_IF_FAILED true
+
+USBHIDKeyboard Keyboard;
+WiFiMulti wifiMulti;
+
 
 WiFiServer server(1337);
 WiFiClient serverClients[MAX_SRV_CLIENTS];
@@ -117,7 +125,7 @@ void connect_to_wifi(){
 //  const char* ssid = ;
 //  const char* password = ;
 
-  wifiMulti.addAP("BTAIM", "pnxJrrfbtm6c");
+//  wifiMulti.addAP("BTAIM", "pnxJrrfbtm6c");
 //  wifiMulti.addAP("ssid_from_AP_2", "your_password_for_AP_2");
 //  wifiMulti.addAP("ssid_from_AP_3", "your_password_for_AP_3");
 
@@ -125,7 +133,7 @@ void connect_to_wifi(){
   for (int loops = 10; loops > 0; loops--) {
     if (wifiMulti.run() == WL_CONNECTED) {
       Serial.println("");
-      Serial.print("WiFi connected ");
+      Serial.print("WiFi connected to " + WiFi.SSID()+"\n");
       Serial.print("IP address: ");
       Serial.println(WiFi.localIP());
       break;
@@ -142,14 +150,241 @@ void connect_to_wifi(){
   }
 }
 
+void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
+    Serial.printf("Listing directory: %s\r\n", dirname);
+
+    File root = fs.open(dirname);
+    if(!root){
+        Serial.println("- failed to open directory");
+        return;
+    }
+    if(!root.isDirectory()){
+        Serial.println(" - not a directory");
+        return;
+    }
+
+    File file = root.openNextFile();
+    while(file){
+        if(file.isDirectory()){
+            Serial.print("  DIR : ");
+            Serial.println(file.name());
+            if(levels){
+                listDir(fs, file.name(), levels -1);
+            }
+        } else {
+            Serial.print("  FILE: ");
+            Serial.print(file.name());
+            Serial.print("\tSIZE: ");
+            Serial.println(file.size());
+        }
+        file = root.openNextFile();
+    }
+}
+
+void readFile(fs::FS &fs, const char * path){
+    Serial.printf("Reading file: %s\r\n", path);
+
+    File file = fs.open(path);
+    if(!file || file.isDirectory()){
+        Serial.println("- failed to open file for reading");
+        return;
+    }
+
+    Serial.println("- read from file:");
+    while(file.available()){
+        Serial.write(file.read());
+    }
+    file.close();
+}
+
+void getFile(fs::FS &fs, const char * path){
+    Serial.printf("Reading file: %s\r\n", path);
+
+    File file = fs.open(path);
+    
+    Serial.println("- read from file:");
+    String line = String();
+    String ssid;
+    String pass;
+    while(file.available()) {
+      line = file.readStringUntil('\r');
+      Serial.println(line);
+      ssid = getValue(line, ' ', 0);
+      pass = getValue(line, ' ', 1);
+      Serial.println(ssid);
+      Serial.println(pass);
+      wifiMulti.addAP(ssid.c_str(), pass.c_str());
+    }
+    file.close();
+
+//    return res;
+}
+
+void writeFile(fs::FS &fs, const char * path, const char * message){
+    Serial.printf("Writing file: %s\r\n", path);
+
+    File file = fs.open(path, FILE_WRITE);
+    if(!file){
+        Serial.println("- failed to open file for writing");
+        return;
+    }
+    if(file.print(message)){
+        Serial.println("- file written");
+    } else {
+        Serial.println("- write failed");
+    }
+    file.close();
+}
+
+void appendFile(fs::FS &fs, const char * path, const char * message){
+    Serial.printf("Appending to file: %s\r\n", path);
+
+    File file = fs.open(path, FILE_APPEND);
+    if(!file){
+        Serial.println("- failed to open file for appending");
+        return;
+    }
+    if(file.print(message)){
+        Serial.println("- message appended");
+    } else {
+        Serial.println("- append failed");
+    }
+    file.close();
+}
+
+void renameFile(fs::FS &fs, const char * path1, const char * path2){
+    Serial.printf("Renaming file %s to %s\r\n", path1, path2);
+    if (fs.rename(path1, path2)) {
+        Serial.println("- file renamed");
+    } else {
+        Serial.println("- rename failed");
+    }
+}
+
+void deleteFile(fs::FS &fs, const char * path){
+    Serial.printf("Deleting file: %s\r\n", path);
+    if(fs.remove(path)){
+        Serial.println("- file deleted");
+    } else {
+        Serial.println("- delete failed");
+    }
+}
+
+void testFileIO(fs::FS &fs, const char * path){
+    Serial.printf("Testing file I/O with %s\r\n", path);
+
+    static uint8_t buf[512];
+    size_t len = 0;
+    File file = fs.open(path, FILE_WRITE);
+    if(!file){
+        Serial.println("- failed to open file for writing");
+        return;
+    }
+
+    size_t i;
+    Serial.print("- writing" );
+    uint32_t start = millis();
+    for(i=0; i<2048; i++){
+        if ((i & 0x001F) == 0x001F){
+          Serial.print(".");
+        }
+        file.write(buf, 512);
+    }
+    Serial.println("");
+    uint32_t end = millis() - start;
+    Serial.printf(" - %u bytes written in %u ms\r\n", 2048 * 512, end);
+    file.close();
+
+    file = fs.open(path);
+    start = millis();
+    end = start;
+    i = 0;
+    if(file && !file.isDirectory()){
+        len = file.size();
+        size_t flen = len;
+        start = millis();
+        Serial.print("- reading" );
+        while(len){
+            size_t toRead = len;
+            if(toRead > 512){
+                toRead = 512;
+            }
+            file.read(buf, toRead);
+            if ((i++ & 0x001F) == 0x001F){
+              Serial.print(".");
+            }
+            len -= toRead;
+        }
+        Serial.println("");
+        end = millis() - start;
+        Serial.printf("- %u bytes read in %u ms\r\n", flen, end);
+        file.close();
+    } else {
+        Serial.println("- failed to open file for reading");
+    }
+}
+
+String getValue(String data, char separator, int index){
+  int found = 0;
+  int strIndex[] = {0, -1};
+  int maxIndex = data.length()-1;
+
+  for(int i=0; i<=maxIndex && found<=index; i++){
+    if(data.charAt(i)==separator || i==maxIndex){
+        found++;
+        strIndex[0] = strIndex[1]+1;
+        strIndex[1] = (i == maxIndex) ? i+1 : i;
+    }
+  }
+
+  return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+void parse_ssids(String file){
+    String line = getValue(file, '\r', 0);
+  String ssid;
+  String pass;
+  Serial.println(line);
+  //while(line.length() > 0){
+    ssid = getValue(line, ' ', 0);
+    pass = getValue(line, ' ', 1);
+    Serial.println(ssid);
+    Serial.println(pass);
+    wifiMulti.addAP(ssid.c_str(), pass.c_str());
+    file.remove(0, file.indexOf('\n') + 1);
+    line = getValue(file, '\r', 0);
+    Serial.println(line.length());
+  //} 
+}
+
 void setup() {
   
   Keyboard.begin();
   USB.begin();
 
   Serial.begin(115200);
+  
+  if(!SPIFFS.begin(FORMAT_SPIFFS_IF_FAILED)){
+        Serial.println("SPIFFS Mount Failed");
+        return;
+  }
+  Serial.println("The device started!!");
+  //SPIFFS.format();
+  if(!SPIFFS.exists("/list.txt")){
+    Serial.println( "list.txt does not exist. Creating!" );
+    //GEN FILE WITH DEFAULT SSID
+    writeFile(SPIFFS, "/list.txt", "BTAIM pnxJrrfbtm6c\r\n");
+    appendFile(SPIFFS, "/list.txt", "World ofme!\r\n");
+  } else {
+    Serial.println( "list.txt already exist. Reading!!" );
+  }
+  
+  readFile(SPIFFS, "/list.txt");
+  getFile(SPIFFS, "/list.txt");
+//  parse_ssids(getFile(SPIFFS, "/list.txt"));
+//  Serial.println(file);
+  
   Serial.println("\nConnecting");
-
   connect_to_wifi();
 
   //start UART and the server
@@ -165,7 +400,7 @@ void loop() {
 
  uint8_t i;
  String recv;
- char buf[30];
+ //char buf[30];
   if (wifiMulti.run() == WL_CONNECTED) {
     //check if there are any new clients
     if (server.hasClient()){
@@ -193,18 +428,40 @@ void loop() {
           //get data from the telnet client and push it to the UART
           while(serverClients[i].available()){
             recv = serverClients[i].readStringUntil('\r');
-            
-            if (recv == "exit") {
+            String arg1 = getValue(recv, ' ', 0);
+            if (arg1 == "exit") {
               serverClients[i].stop();
             }
-            if (recv == "SYN") {
+            if (arg1 == "addSSID") {
+              String arg2 = getValue(recv, ' ', 1);
+              String arg3 = getValue(recv, ' ', 2);
+              String line = arg2+" "+arg3+"\r\n";
+              appendFile(SPIFFS, "/list.txt", line.c_str());
+            }
+            if (arg1 == "SYN") {
               serverClients[i].println("SYN/ACK");
             }
-            if (recv == "terminal") {
+            if (arg1 == "send") {
+              recv.remove(0,5);
+              serverClients[i].println("Sent: "+recv);
+              Keyboard.print(recv);
+            }
+            if (arg1 == "platform") {
+              String arg2 = getValue(recv, ' ', 1);
+              if (arg2 == "set") {
+                String arg3 = getValue(recv, ' ', 2);
+                if(arg3 != NULL){
+                platform = arg3.toInt();  
+                }
+              }
+              serverClients[i].println("Platform is:");
+              serverClients[i].println(platform);
+            }
+            if (arg1 == "terminal") {
               terminal();
               serverClients[i].println("opened CMD");
             }
-            recv.toCharArray(buf,recv.length());
+            //recv.toCharArray(buf,recv.length());
             //Keyboard.print(recv); //bug aicea
             Serial.print(recv);
           }
