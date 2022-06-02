@@ -1,28 +1,15 @@
 /*
   Keyboard logout
 
-  This sketch demonstrates the Keyboard library.
+  This sketch demonstrates the BadEspresso functionality.
+  It's a combination of a few examples from arduino ide such as KeyboardLogout and Wifi 
+  telnet and a few other sources from the internet, all under free licences.
 
-  When you connect pin 2 to ground, it performs a logout.
-  It uses keyboard combinations to do this, as follows:
-
-  On Windows, CTRL-ALT-DEL followed by ALT-l
-  On Ubuntu, CTRL-ALT-DEL, and ENTER
-  On OSX, CMD-SHIFT-q
-
-  To wake: Spacebar.
-
-  Circuit:
-  - Arduino Leonardo or Micro
-  - wire to connect D2 to ground
-
-  created 6 Mar 2012
-  modified 27 Mar 2012
-  by Tom Igoe
-
-  This example is in the public domain.
-
+  This is compatible with esp32-S2/S3 or greater.
+  
   https://www.arduino.cc/en/Tutorial/BuiltInExamples/KeyboardLogout
+
+  author: Alexandru Mircea 
 */
 
 #include "USB.h"
@@ -67,7 +54,7 @@ void lock(){
       Keyboard.write(KEY_RETURN);
       break;
     case WINDOWS:
-      // CTRL-ALT-DEL:
+      // CTRL-ALT-DEL:  //DEPRICATED, but usefull
 //      Keyboard.press(KEY_LEFT_CTRL);
 //      Keyboard.press(KEY_LEFT_ALT);
 //      Keyboard.press(KEY_DELETE);
@@ -81,7 +68,7 @@ void lock(){
 //      delay(2000);
 //      Keyboard.press('k');
 //      delay(100);
-//      Keyboard.releaseAll();
+//      Keyboard.releaseAll();  
       Keyboard.press(KEY_LEFT_GUI);
       Keyboard.press('l');
       delay(100);
@@ -314,15 +301,14 @@ void setup() {
   if(!SPIFFS.exists("/list.txt")){
     Serial.println( "list.txt does not exist. Creating!" );
     //GEN FILE WITH DEFAULT SSID
-    writeFile(SPIFFS, "/list.txt", "BTAIM pnxJrrfbtm6c\r\n");
+    writeFile(SPIFFS, "/list.txt", "<SSID> <password>\r\n");  //CHANGE HERE!!!!!!!!!!!!!!!!!!
   } else {
     Serial.println( "list.txt already exist. Reading!!" );
   }
   
   readFile(SPIFFS, "/list.txt");
   getFile(SPIFFS, "/list.txt");
-//  parse_ssids(getFile(SPIFFS, "/list.txt"));
-//  Serial.println(file);
+
   
   Serial.println("\nConnecting");
   connect_to_wifi();
