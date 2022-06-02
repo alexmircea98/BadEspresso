@@ -54,7 +54,7 @@ WiFiClient serverClients[MAX_SRV_CLIENTS];
 int platform = 1; //DEFAULT WINDOWS
 
 
-void lock(int platform){
+void lock(){
   switch (platform) {
     case OSX:
       Keyboard.press(KEY_LEFT_GUI);
@@ -68,16 +68,23 @@ void lock(int platform){
       break;
     case WINDOWS:
       // CTRL-ALT-DEL:
-      Keyboard.press(KEY_LEFT_CTRL);
-      Keyboard.press(KEY_LEFT_ALT);
-      Keyboard.press(KEY_DELETE);
+//      Keyboard.press(KEY_LEFT_CTRL);
+//      Keyboard.press(KEY_LEFT_ALT);
+//      Keyboard.press(KEY_DELETE);
+//      delay(100);
+//      Keyboard.releaseAll();
+//      // ALT + k:
+//      delay(2000);
+//      Keyboard.press(KEY_LEFT_ALT);
+//      delay(100);
+//      Keyboard.release(KEY_LEFT_ALT);
+//      delay(2000);
+//      Keyboard.press('k');
+//      delay(100);
+//      Keyboard.releaseAll();
+      Keyboard.press(KEY_LEFT_GUI);
+      Keyboard.press('l');
       delay(100);
-      Keyboard.releaseAll();
-      // ALT + k:
-      delay(2000);
-      Keyboard.press(KEY_LEFT_ALT);
-      Keyboard.releaseAll();
-      Keyboard.press('k');
       Keyboard.releaseAll();
       break;
     case UBUNTU:
@@ -122,12 +129,6 @@ void terminal(){
 }
 
 void connect_to_wifi(){
-//  const char* ssid = ;
-//  const char* password = ;
-
-//  wifiMulti.addAP("BTAIM", "pnxJrrfbtm6c");
-//  wifiMulti.addAP("ssid_from_AP_2", "your_password_for_AP_2");
-//  wifiMulti.addAP("ssid_from_AP_3", "your_password_for_AP_3");
 
   Serial.println("Connecting Wifi ");
   for (int loops = 10; loops > 0; loops--) {
@@ -182,7 +183,7 @@ void listDir(fs::FS &fs, const char * dirname, uint8_t levels){
 }
 
 void readFile(fs::FS &fs, const char * path){
-    Serial.printf("Reading file: %s\r\n", path);
+
 
     File file = fs.open(path);
     if(!file || file.isDirectory()){
@@ -198,21 +199,14 @@ void readFile(fs::FS &fs, const char * path){
 }
 
 void getFile(fs::FS &fs, const char * path){
-    Serial.printf("Reading file: %s\r\n", path);
-
     File file = fs.open(path);
-    
-    Serial.println("- read from file:");
     String line = String();
     String ssid;
     String pass;
     while(file.available()) {
       line = file.readStringUntil('\r');
-      Serial.println(line);
       ssid = getValue(line, ' ', 0);
       pass = getValue(line, ' ', 1);
-      Serial.println(ssid);
-      Serial.println(pass);
       wifiMulti.addAP(ssid.c_str(), pass.c_str());
     }
     file.close();
@@ -270,59 +264,6 @@ void deleteFile(fs::FS &fs, const char * path){
     }
 }
 
-void testFileIO(fs::FS &fs, const char * path){
-    Serial.printf("Testing file I/O with %s\r\n", path);
-
-    static uint8_t buf[512];
-    size_t len = 0;
-    File file = fs.open(path, FILE_WRITE);
-    if(!file){
-        Serial.println("- failed to open file for writing");
-        return;
-    }
-
-    size_t i;
-    Serial.print("- writing" );
-    uint32_t start = millis();
-    for(i=0; i<2048; i++){
-        if ((i & 0x001F) == 0x001F){
-          Serial.print(".");
-        }
-        file.write(buf, 512);
-    }
-    Serial.println("");
-    uint32_t end = millis() - start;
-    Serial.printf(" - %u bytes written in %u ms\r\n", 2048 * 512, end);
-    file.close();
-
-    file = fs.open(path);
-    start = millis();
-    end = start;
-    i = 0;
-    if(file && !file.isDirectory()){
-        len = file.size();
-        size_t flen = len;
-        start = millis();
-        Serial.print("- reading" );
-        while(len){
-            size_t toRead = len;
-            if(toRead > 512){
-                toRead = 512;
-            }
-            file.read(buf, toRead);
-            if ((i++ & 0x001F) == 0x001F){
-              Serial.print(".");
-            }
-            len -= toRead;
-        }
-        Serial.println("");
-        end = millis() - start;
-        Serial.printf("- %u bytes read in %u ms\r\n", flen, end);
-        file.close();
-    } else {
-        Serial.println("- failed to open file for reading");
-    }
-}
 
 String getValue(String data, char separator, int index){
   int found = 0;
@@ -374,7 +315,6 @@ void setup() {
     Serial.println( "list.txt does not exist. Creating!" );
     //GEN FILE WITH DEFAULT SSID
     writeFile(SPIFFS, "/list.txt", "BTAIM pnxJrrfbtm6c\r\n");
-    appendFile(SPIFFS, "/list.txt", "World ofme!\r\n");
   } else {
     Serial.println( "list.txt already exist. Reading!!" );
   }
@@ -391,9 +331,6 @@ void setup() {
   server.begin();
   server.setNoDelay(true);
 
-//  Serial.print("Ready! Use 'nc ");
-//  Serial.print(WiFi.localIP());
-//  Serial.println(" 1337' to connect");
 }
 
 void loop() {
@@ -461,8 +398,21 @@ void loop() {
               terminal();
               serverClients[i].println("opened CMD");
             }
-            //recv.toCharArray(buf,recv.length());
-            //Keyboard.print(recv); //bug aicea
+            if (arg1 == "lock") {
+              lock();
+              serverClients[i].println("locked");
+            }
+            if (arg1 == "help") {
+              serverClients[i].println("exit - closes the connection");
+              serverClients[i].println("help - lists this list");
+              serverClients[i].println("addSSID <SSID> <Password> - add a new set of credential for an AP");
+              serverClients[i].println("SYN - responds with ACK, for debugging purposes");
+              serverClients[i].println("send <message> - sends the message content as keyboard input");
+              serverClients[i].println("platform [set x] - gives the index of the selected platform; If set option is selected it switches to the set platform ( 0 - OSX, 1 (default) - Windows, 2 - Linux)");
+              serverClients[i].println("terminal - opens a terminal for the selected platform");
+              serverClients[i].println("lock - locks the station for the selected platform");
+
+            }
             Serial.print(recv);
           }
         }
